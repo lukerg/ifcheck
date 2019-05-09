@@ -300,6 +300,10 @@ int main(int argc, char ** argv, char** envp)
 					break;
 			}
 		}
+		else if ( vars->type == SNMP_NOSUCHINSTANCE ) {
+			fprintf(stderr, "host says it doesnt have an instance %i\n",ifindex );
+			goto exit;
+		}
 		else {
 			fprintf(stderr, "wanted an integer for ifoper check but got %i\n",vars->type);
 		}
