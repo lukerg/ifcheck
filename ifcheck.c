@@ -240,7 +240,6 @@ int main(int argc, char ** argv, char** envp)
 			/* first time lookup required */
 			char outcome;
 			outcome = attemptLookup(ss,ifdesc,&ifindex);
-			fprintf(stderr,"outcome %c and ifindex %i\n",outcome, ifindex);
 			if ( outcome == 'n' ) {
 				printf("UNK - device has no interface '%s'\n",ifdesc);
 				goto exit;
