@@ -58,6 +58,21 @@ const char* makeStateFilePath(char*progname, char*hostname, const char* key, cha
 	return fullpath;
 }
 
+/*
+	check if file exists, open as new if it doesnt
+	otherwise open in read/write mode
+	since there is no non truncate variant of w+
+*/
+FILE* sfp_write_open(const char* sfpath) {
+	int rc;
+
+	rc=access(sfpath,F_OK);
+	if ( rc == 0 ) /* file exists, use read write at beginning of file */
+		return fopen(sfpath, "r+");
+	else
+		return fopen(sfpath, "w");
+}
+
 int loadLastChange(const char* stateFilePath, long* value) {
 	FILE* fp =fopen(stateFilePath,"r");
 	if (!fp) {
@@ -74,7 +89,7 @@ int loadLastChange(const char* stateFilePath, long* value) {
 }
 
 void writeLastChange(const char* stateFilePath, long value) {
-	FILE* fp =fopen(stateFilePath,"w+");
+	FILE* fp =sfp_write_open(stateFilePath);
 	if (!fp) {
 		fprintf(stderr,"cant open %s to write state data, please fix(%s)\n",stateFilePath,strerror(errno));
 	}
@@ -84,18 +99,17 @@ void writeLastChange(const char* stateFilePath, long value) {
 	}
 }
 
-int loadIndexFromState(const char* stateFilePath, int* ifindex) {
+int loadIndexFromState(const char* stateFilePath, long* ifindex) {
 	FILE* fp =fopen(stateFilePath,"r");
 	int rc=0;
-	int point;
+	long point;
 	*ifindex=-1;
 	if (!fp) {
 		fprintf(stderr,"cant open %s to read index data\n",stateFilePath);
 		return 0;
 	}
 	point = fseek(fp,sizeof(long),SEEK_SET);
-	if ( point == 0 ) {
-		fread(ifindex,sizeof(long),1,fp);
+	if ( point == 0 && fread(ifindex,sizeof(long),1,fp) ) {
 		rc=1; /* only successful response comes from here */
 	}
 	else {
@@ -107,19 +121,30 @@ int loadIndexFromState(const char* stateFilePath, int* ifindex) {
 	return rc;
 }
 
-void writeStateIndex(const char* stateFilePath, int ifindex) {
-	FILE* fp =fopen(stateFilePath,"w+"); /* must use update open */
+void writeStateIndex(const char* stateFilePath, long ifindex) {
+	FILE* fp =sfp_write_open(stateFilePath);
 	int point=0;
+	int bytes=0;
 	if (!fp) {
 		fprintf(stderr,"failed to open state file for update(%s)\n",strerror(errno));
+		return;
 	}
 	point=fseek(fp,sizeof(long),SEEK_SET);
 
-	if (point == -1) {
+/* taken out for now
+	fprintf(stderr,"point is %li, ifindex is %li\n", point,ifindex);
+	if (point == -1 || point == 0) {
+		long dummy = 0x6262;
 		//future BUG - this happens due to bad desgin of all filedata.c's routines
-		fwrite(&point,sizeof(long),1,fp);
+		fputs("hit pad file bug\n",stderr);
+		bytes=fwrite(&dummy,sizeof(long),1,fp);
+		if ( bytes == 0 )
+			fputs("failed to pad file\n",stderr);
 	}
-	fwrite(&ifindex,sizeof(long),1,fp);
+*/
+	bytes=fwrite(&ifindex,sizeof(long),1,fp);
+	if ( bytes == 0 )
+		fputs("failed to write index!\n",stderr);
 	fclose(fp);
 }
 

@@ -36,7 +36,7 @@ size_t buildInstanceOID(oid* pOID, enum enummib em, int instance );
 
 /* definitions */
 
-char attemptLookup(netsnmp_session* ss, const char* ifdescr, int* pIfDesc) {
+char attemptLookup(netsnmp_session* ss, const char* ifdescr, long* pIfDesc) {
 	int status=0,searching=1,localidx=0;
 	netsnmp_pdu *response=0;
 	netsnmp_variable_list *vars;
@@ -130,7 +130,7 @@ size_t buildInstanceOID(oid* pOID, enum enummib em, int instance ) {
 }
 
 /*single use function, meaning static buffer is okay*/
-const char* genkey(int index, char* descr) {
+const char* genkey(long index, char* descr) {
 	static char retbuf[256];
 	memset(retbuf,0,256);
 	if (index != -1)
@@ -166,7 +166,7 @@ int main(int argc, char ** argv, char** envp)
 	char* snmpcommunity=0;
 	char* ifdesc=0;
 	const char* statefilepath;
-	int ifindex=-1;
+	long ifindex=-1;
 	int flags, opt;
 	
 	/*nagios return data */
@@ -240,6 +240,7 @@ int main(int argc, char ** argv, char** envp)
 			/* first time lookup required */
 			char outcome;
 			outcome = attemptLookup(ss,ifdesc,&ifindex);
+			fprintf(stderr,"outcome %c and ifindex %i\n",outcome, ifindex);
 			if ( outcome == 'n' ) {
 				printf("UNK - device has no interface '%s'\n",ifdesc);
 				goto exit;
@@ -323,23 +324,22 @@ int main(int argc, char ** argv, char** envp)
 			goto exit;
 		}
 
-		
 		/* load data, if present then compare values */
 		loadstatus=loadLastChange(statefilepath,&lastChangeData);
 		perfdata=(char*)malloc(512);
 		memset(perfdata,0,512);
 		if ( loadstatus ) {
-			int delta = lastChangeData != *vars->val.integer;
+			long delta = lastChangeData - *vars->val.integer;
 			int bytes=snprintf(perfdata,512,"lastchange=%u",*vars->val.integer);
-			if ( delta > 1) {
+			if ( delta != 0) {
 				nagios_rc=NAGIOS_WARN;
 				healthtag="WARNING - suspected link flap";
-				writeLastChange(statefilepath,*vars->val.integer);
 				perfdata[bytes]=',';
-				snprintf(perfdata+bytes+1,512-bytes,"delta=%i,previous=%i",delta,lastChangeData);
+				snprintf(perfdata+bytes+1,512-bytes,"delta=%li,previous=%li",delta,lastChangeData);
+				writeLastChange(statefilepath,*vars->val.integer);
 			}
 		}
-		else if (!loadstatus) 
+		else
 			writeLastChange(statefilepath,*vars->val.integer);
 
 		/* if this is still unset then we want to process the third variable in the PDU */

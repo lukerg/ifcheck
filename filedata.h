@@ -6,7 +6,7 @@ const char* makeStateFilePath(char*progname, char*hostname, const char* key, cha
 
 int loadLastChange(const char* stateFilePath, long* value);
 void writeLastChange(const char* stateFilePath, long value);
-int loadIndexFromState(const char* stateFilePath, int* ifindex);
-void writeStateIndex(const char* stateFilePath, int ifindex);
+int loadIndexFromState(const char* stateFilePath, long* ifindex);
+void writeStateIndex(const char* stateFilePath, long ifindex);
 
 #endif //__FILEDATA_H__
