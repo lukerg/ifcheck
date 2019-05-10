@@ -361,8 +361,16 @@ int main(int argc, char ** argv, char** envp)
 		}
 		else { /*otherwise, check that the returned ifDescr matches the CLI supplied one*/
 			if (!strcmp(ifdesc,vars->val.string) ) {
-				fprintf(stderr,"caught reindex of %s on %s\n",ifdesc,iphost);
-				writeStateIndex(statefilepath,ifindex);
+				long oldindex=ifindex;
+				char outcome = attemptLookup(ss,ifdesc,&ifindex);
+				if ( outcome == 'n' ) { /* interface no longer exists at all? that is critical*/
+					nagios_rc=NAGIOS_CRIT;
+					healthtag="REMOVED!";
+				}
+				else {
+					fprintf(stderr,"caught reindex of %s on %s from %li to %li\n",ifdesc,iphost,oldindex,ifindex);
+					writeStateIndex(statefilepath,ifindex);
+				}
 			}
 		}
 		/* 
