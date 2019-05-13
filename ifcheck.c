@@ -343,6 +343,9 @@ int main(int argc, char ** argv, char** envp)
 					nagios_rc=NAGIOS_WARN;
 					healthtag="WARNING - link flap";
 				}
+				else {
+					healthtag ="OK(f)";
+				}
 				writeLastChange(statefilepath,*vars->val.integer);
 			}
 		}
