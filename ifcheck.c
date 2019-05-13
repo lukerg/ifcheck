@@ -334,7 +334,7 @@ int main(int argc, char ** argv, char** envp)
 		perfdata=(char*)malloc(512);
 		memset(perfdata,0,512);
 		if ( loadstatus ) {
-			long delta = lastChangeData - *vars->val.integer;
+			long delta = *vars->val.integer - lastChangeData;
 			int bytes=snprintf(perfdata,512,"lastchange=%u",*vars->val.integer);
 			if ( delta != 0) {
 				perfdata[bytes]=',';
