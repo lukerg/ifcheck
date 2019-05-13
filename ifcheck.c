@@ -150,6 +150,8 @@ const char* genkey(long index, char* descr) {
 	return retbuf;
 }
 
+const char* usage_string="Usage: %s -H {ipaddress] -C {snmp community} [-d ifDesc] [-k ifindex] [-S]\n";
+
 int main(int argc, char ** argv, char** envp)
 {
     netsnmp_session session, *ss=0;
@@ -168,13 +170,14 @@ int main(int argc, char ** argv, char** envp)
 	const char* statefilepath;
 	long ifindex=-1;
 	int flags, opt;
+	short silentFlaps=0;
 	
 	/*nagios return data */
 	char* statusline=0;
 	char* perfdata=0;
 	int nagios_rc=NAGIOS_UNK; /*default to unknown*/
 	
-	while ((opt = getopt(argc, argv, "H:C:d:k:")) != -1) {
+	while ((opt = getopt(argc, argv, "H:C:d:k:S")) != -1) {
 		switch (opt) {
 			case 'H':
 				iphost=strdup(optarg);
@@ -188,17 +191,20 @@ int main(int argc, char ** argv, char** envp)
 			case 'k':
 				ifindex=atoi(optarg);
 				break;
+			case 'S':
+				silentFlaps=1;
+				break;
 			default:
-				fprintf(stderr, "Usage: %s -H {ipaddress] -C {snmp community} [-d ifDesc] [-k ifindex]\n",argv[0]);
+				fprintf(stderr,usage_string,argv[0]);
 				goto exit;
 		}
 	}
 	if ( !iphost || !snmpcommunity ) {
-			fprintf(stderr, "Usage: %s -H {ipaddress] -C {snmp community} [-d ifDesc] [-k ifindex]\n",argv[0]);
+			fprintf(stderr,usage_string,argv[0]);
 			goto exit;
 	}
 	if ( !ifdesc && ( ifindex < 1) ) {
-			fprintf(stderr, "Usage: %s -H {ipaddress] -C {snmp community} [-d ifDesc] [-k ifindex > 0]\n",argv[0]);
+			fprintf(stderr,usage_string,argv[0]);
 			goto exit;
 	}
 /*
@@ -331,10 +337,12 @@ int main(int argc, char ** argv, char** envp)
 			long delta = lastChangeData - *vars->val.integer;
 			int bytes=snprintf(perfdata,512,"lastchange=%u",*vars->val.integer);
 			if ( delta != 0) {
-				nagios_rc=NAGIOS_WARN;
-				healthtag="WARNING - suspected link flap";
 				perfdata[bytes]=',';
 				snprintf(perfdata+bytes+1,512-bytes,"delta=%li,previous=%li",delta,lastChangeData);
+				if ( !silentFlaps ){
+					nagios_rc=NAGIOS_WARN;
+					healthtag="WARNING - link flap";
+				}
 				writeLastChange(statefilepath,*vars->val.integer);
 			}
 		}
