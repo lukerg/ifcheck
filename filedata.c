@@ -74,18 +74,19 @@ FILE* sfp_write_open(const char* sfpath) {
 }
 
 int loadLastChange(const char* stateFilePath, long* value) {
+	int rc=0;
 	FILE* fp =fopen(stateFilePath,"r");
 	if (!fp) {
 		fprintf(stderr,"cant open %s to read state data, assuming no existing data\n",stateFilePath);
 		*value=0;
-		return 0;
 	}
 	else {
-		fread(value,sizeof(long),1,fp);
-		fclose(fp);
-		return 1;
+		int bytes=fread(value,sizeof(long),1,fp);
+		if ( bytes && *value != 0)
+			rc=1; /* only good response comes from here */
 	}
-	return 1;
+	fclose(fp);
+	return rc;
 }
 
 void writeLastChange(const char* stateFilePath, long value) {
