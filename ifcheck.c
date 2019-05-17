@@ -8,6 +8,8 @@
 
 #include "filedata.h"
 
+/* definitions */
+
 const char* stroid_ifmibdesc		=".1.3.6.1.2.1.2.2.1.2";
 const char* stroid_ifmiboperstatus	=".1.3.6.1.2.1.2.2.1.8";
 const char* stroid_ifmiblastchange	=".1.3.6.1.2.1.2.2.1.9";
@@ -25,6 +27,12 @@ enum {
 	NAGIOS_UNK
 };
 
+static int lookup_debug_out = 0;
+
+size_t buildInstanceOID(oid* pOID, enum enummib em, int instance );
+
+/* helper routines */
+
 size_t strpos(const char* str, char c) {
 	size_t rval=0;
 	while ( str[rval] != 0 && str[rval] != c)
@@ -32,57 +40,53 @@ size_t strpos(const char* str, char c) {
 	return rval;
 }
 
-size_t buildInstanceOID(oid* pOID, enum enummib em, int instance );
-
-/* definitions */
-
 char attemptLookup(netsnmp_session* ss, const char* ifdescr, long* pIfDesc) {
 	int status=0,searching=1,localidx=0;
 	netsnmp_pdu *response=0;
 	netsnmp_variable_list *vars;
 	oid ifdOID[MAX_OID_LEN];
-	size_t ifdOID_len;
+	size_t ifdOID_len, total_ifs=0;
 
 	while ( searching ) {
 		netsnmp_pdu* spdu = snmp_pdu_create(SNMP_MSG_GETBULK);
 		spdu->non_repeaters=0;
 		spdu->max_repetitions=100;
-
+		if ( lookup_debug_out )
+			fprintf(stderr,"building pdu with index %i\n",localidx);
 		ifdOID_len=buildInstanceOID(ifdOID, e_ifmibdesc , localidx);
 		snmp_add_null_var(spdu, ifdOID, ifdOID_len);
-
 		status = snmp_synch_response(ss, spdu, &response);
 		if (status == STAT_SUCCESS && response->errstat == SNMP_ERR_NOERROR) {
 			for(vars = response->variables; vars; vars = vars->next_variable) {
 				if ( snmp_oid_compare(ifdOID,ifdOID_len-1 , vars->name, vars->name_length-1) != 0 ) {
-					/*
-					fputs("reached end of ifDescr listing, interface not found!\n",stderr);
-					fprint_objid(stderr,ifdOID, ifdOID_len);
-					fprint_objid(stderr,vars->name, vars->name_length);
-					*/
+					if ( lookup_debug_out )
+						fputs("reached end of ifDescr listing, interface not found!\n",stderr);
 					searching = 0;
 					break;
 				}
+				total_ifs++;
+				localidx = vars->name [ vars->name_length-1 ];
 				if (vars->type == ASN_OCTET_STR) {
 					if (!strcmp(ifdescr,vars->val.string)){
 						/* store the data */
 						*pIfDesc=vars->name[vars->name_length-1];
-						//fprintf(stderr,"found %s on %i\n",ifdescr, *pIfDesc);
+						if ( lookup_debug_out )
+							fprintf(stderr,"found %s on %i after looking at %i interfaces\n",
+								ifdescr, *pIfDesc,total_ifs);
 						snmp_free_pdu(response);
 						return 'y';
 					}
+					else if ( lookup_debug_out )
+						fprintf(stderr,"not mached %s\n", vars->val.string);
 				}
 				else {
-					fprintf(stderr,"weird data type %s, vars->type is %i\n",ifdescr,vars->type);
+					fprintf(stderr,"attempLookup: weird data type %s, vars->type is %i\n",ifdescr,vars->type);
 					fprint_objid(stderr,vars->name, vars->name_length);
 					searching=0;
 					break;
 				}
 			}
-			if ( vars == 0 )
-				break;
-			/* if we are here then we reached the end of this PDU and want another*/
-			localidx = vars->name [ vars->name_length-1 ];
+
 		}
 		else {
 			/* ** FAILURE: print what went wrong **/
@@ -98,6 +102,8 @@ char attemptLookup(netsnmp_session* ss, const char* ifdescr, long* pIfDesc) {
 		}
 	}
 	snmp_free_pdu(response);
+	if ( lookup_debug_out )
+		fprintf(stderr,"searched %i but didnt find %s\n",total_ifs,ifdescr);
 	return 'n';
 }
 
@@ -177,7 +183,7 @@ int main(int argc, char ** argv, char** envp)
 	char* perfdata=0;
 	int nagios_rc=NAGIOS_UNK; /*default to unknown*/
 	
-	while ((opt = getopt(argc, argv, "H:C:d:k:S")) != -1) {
+	while ((opt = getopt(argc, argv, "H:C:d:k:SD")) != -1) {
 		switch (opt) {
 			case 'H':
 				iphost=strdup(optarg);
@@ -193,6 +199,9 @@ int main(int argc, char ** argv, char** envp)
 				break;
 			case 'S':
 				silentFlaps=1;
+				break;
+			case 'D':
+				lookup_debug_out=1;
 				break;
 			default:
 				fprintf(stderr,usage_string,argv[0]);
