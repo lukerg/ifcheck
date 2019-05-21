@@ -84,8 +84,8 @@ int loadLastChange(const char* stateFilePath, long* value) {
 		int bytes=fread(value,sizeof(long),1,fp);
 		if ( bytes && *value != 0)
 			rc=1; /* only good response comes from here */
+		fclose(fp);
 	}
-	fclose(fp);
 	return rc;
 }
 
