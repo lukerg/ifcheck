@@ -286,6 +286,10 @@ int main(int argc, char ** argv, char** envp)
  **/
 	status = snmp_synch_response(ss, pdu, &response);
 
+	statusline=(char*)malloc(sizeof(char) * 1024);
+	perfdata=(char*)malloc(512);
+	memset(statusline,0,sizeof(char) * 1024);
+	memset(perfdata,0,sizeof(char) * 512);
 /*
  ** Process the response.
  **/
@@ -295,7 +299,6 @@ int main(int argc, char ** argv, char** envp)
 		int loadstatus;
 		size_t offset=0;
 		
-		statusline=(char*)malloc(sizeof(char) * 1024);
 		variable_print=(char*)malloc(sizeof(char) * 256);
 
 		vars = response->variables;
@@ -340,7 +343,6 @@ int main(int argc, char ** argv, char** envp)
 
 		/* load data, if present then compare values */
 		loadstatus=loadLastChange(statefilepath,&lastChangeData);
-		perfdata=(char*)malloc(512);
 		memset(perfdata,0,512);
 		if ( loadstatus ) {
 			long delta = *vars->val.integer - lastChangeData;
@@ -401,10 +403,10 @@ int main(int argc, char ** argv, char** envp)
     } else {
 		/* ** FAILURE: print what went wrong **/
 		if (status == STAT_SUCCESS)
-			fprintf(stderr, "Error in packet\nReason: %s\n",
+			snprintf(statusline,1024, "Error in packet\nReason: %s",
 					snmp_errstring(response->errstat));
 		else if (status == STAT_TIMEOUT)
-			fprintf(stderr, "Timeout: No response from %s.\n",
+			snprintf(statusline,1024, "UNKNOWN - Timeout: No response from %s",
 					session.peername);
 		else
 			snmp_sess_perror("ifcheck", ss);
