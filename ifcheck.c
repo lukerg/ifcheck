@@ -271,14 +271,16 @@ int main(int argc, char ** argv, char** envp)
  **/
 	pdu = snmp_pdu_create(SNMP_MSG_GET);
 	
+	/* doing not nice things here, ask for ifDescr first to make processing easier*/
+
+	/* fetch the description to detect reindexing by the host*/
+	anOID_len=buildInstanceOID(anOID, e_ifmibdesc , ifindex );
+	snmp_add_null_var(pdu, anOID, anOID_len);
 	/* want to get the operation status of the interface */
 	anOID_len=buildInstanceOID(anOID, e_ifmiboperstatus , ifindex );
 	snmp_add_null_var(pdu, anOID, anOID_len);
 	/* and the last change, to catch link flapping */
 	anOID_len=buildInstanceOID(anOID, e_ifmiblastchange , ifindex );
-	snmp_add_null_var(pdu, anOID, anOID_len);
-	/* fetch the description as well, to detect reindexing by the host*/
-	anOID_len=buildInstanceOID(anOID, e_ifmibdesc , ifindex );
 	snmp_add_null_var(pdu, anOID, anOID_len);
 
 /*
@@ -300,8 +302,43 @@ int main(int argc, char ** argv, char** envp)
 		size_t offset=0;
 		
 		variable_print=(char*)malloc(sizeof(char) * 256);
-
 		vars = response->variables;
+
+	/* 1 - examine the description first */
+
+		/* if no CLI provided description */
+		if ( !ifdesc ) {
+			if (!vars) {
+				fprintf(stderr,"non fatal problem of not getting an ifdesc back from host %s, try to fix this",iphost);
+				ifdesc=strdup("mystery interface! (fix this if possible)"); /* put something into here */
+			}
+			else if ( vars->type != ASN_OCTET_STR)  { /* very strange but lets try to handle it gracefully */
+				fprintf(stderr,"non fatal problem of host %s sending a non octet string back",iphost);
+				ifdesc=strdup("garbled interface description, try to fix this");
+			}
+			else { /* somehow the data was valid, despite fate's best efforts to stop us */
+				ifdesc = (char *)malloc(1 + vars->val_len);
+				memcpy(ifdesc, vars->val.string, vars->val_len);
+				ifdesc[vars->val_len] = '\0';
+			}
+		}
+		else { /*otherwise, check that the returned ifDescr matches the CLI supplied one*/
+			if (!strcmp(ifdesc,vars->val.string) ) {
+				long oldindex=ifindex;
+				char outcome = attemptLookup(ss,ifdesc,&ifindex);
+				if ( outcome == 'n' ) { /* interface no longer exists at all? that is critical*/
+					nagios_rc=NAGIOS_CRIT;
+					healthtag="REMOVED!";
+				}
+				else {
+					fprintf(stderr,"detected reindex of %s on %s from %li to %li\n",ifdesc,iphost,oldindex,ifindex);
+					writeStateIndex(statefilepath,ifindex);
+				}
+			}
+		}
+
+	/* 2 - examine the operational status of the interface */
+		vars = vars->next_variable;
 		if (vars->type == ASN_INTEGER) {
 			switch (*vars->val.integer) {
 				case 1: /*up*/
@@ -312,6 +349,22 @@ int main(int argc, char ** argv, char** envp)
 					nagios_rc=NAGIOS_CRIT;
 					healthtag="CRITICAL";
 					break;
+				case 5: /*dormant is bad for all EXCEPT Dialer interfaces*/
+				{
+					const char *descr_dialer="Dialer";
+					if ( strncmp(descr_dialer, ifdesc, 6) == 0 ) {
+						/* dont want to spam stderr with this dormant interface being okay */
+						nagios_rc=NAGIOS_OK;
+						healthtag="OK(dormant)";
+						break;
+					}
+					else {
+						/* not a dialer, this is not good */
+						nagios_rc=NAGIOS_UNK;
+						healthtag="UNKNOWN(dormant)";
+						break;
+					}
+				}
 				default: /*everything else is suspicious*/
 					nagios_rc=NAGIOS_WARN;
 					healthtag="WARNING";
@@ -328,12 +381,10 @@ int main(int argc, char ** argv, char** envp)
 
  		offset=snprint_variable(variable_print+offset,1024-offset,vars->name,vars->name_length,vars);
 		
-		/*  next var is the iflastchange 
-			load the old data off disk then compare, raise WARN if it differs
-		*/
+	/* 3 - examine the iflastchange data */
 		vars = vars->next_variable;
 		if (!vars) {
-			puts("UNK - SNMP second data missing, device unhealthy");
+			puts("UNK - SNMP ifLastChange data missing, device unhealthy");
 			goto exit;
 		}
 		if ( vars->type != ASN_TIMETICKS ) {
@@ -363,40 +414,8 @@ int main(int argc, char ** argv, char** envp)
 		else
 			writeLastChange(statefilepath,*vars->val.integer);
 
-		/* if this is still unset then we want to process the third variable in the PDU */
-		if ( !ifdesc ) { 
-			vars = vars->next_variable;
-			if (!vars) {
-				fprintf(stderr,"non fatal problem of not getting an ifdesc back from host %s, try to fix this",iphost);
-				ifdesc=strdup("mystery interface! (fix this if possible)"); /* put something into here */
-			}
-			else if ( vars->type != ASN_OCTET_STR)  { /* very strange but lets try to handle it gracefully */
-				fprintf(stderr,"non fatal problem of host %s sending a non octet string back",iphost);
-				ifdesc=strdup("garbled interface description, try to fix this");
-			}
-			else { /* somehow the data was valid, despite fate's best efforts to stop us */
-				ifdesc = (char *)malloc(1 + vars->val_len);
-				memcpy(ifdesc, vars->val.string, vars->val_len);
-				ifdesc[vars->val_len] = '\0';
-			}
-		}
-		else { /*otherwise, check that the returned ifDescr matches the CLI supplied one*/
-			if (!strcmp(ifdesc,vars->val.string) ) {
-				long oldindex=ifindex;
-				char outcome = attemptLookup(ss,ifdesc,&ifindex);
-				if ( outcome == 'n' ) { /* interface no longer exists at all? that is critical*/
-					nagios_rc=NAGIOS_CRIT;
-					healthtag="REMOVED!";
-				}
-				else {
-					fprintf(stderr,"caught reindex of %s on %s from %li to %li\n",ifdesc,iphost,oldindex,ifindex);
-					writeStateIndex(statefilepath,ifindex);
-				}
-			}
-		}
-		/* 
-		 below code expects that ifdesc is populated either via arguments or the above code block
-		*/
+	/* 4 - format data for presentation to Nagios process */
+		/* below code expects that ifdesc is populated either via arguments or the above code block */
 		snprintf(statusline,1024,"%s %s %s",healthtag,ifdesc,variable_print);
 	
 		free(variable_print);
